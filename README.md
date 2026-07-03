@@ -22,7 +22,15 @@ Current scope:
 
 ## Usage
 
-Build once:
+Install-free with npm:
+
+```bash
+npx filepizza-cli share /absolute/path/to/file
+npx filepizza-cli status <upload-id>
+npx filepizza-cli stop <upload-id>
+```
+
+Local build:
 
 ```bash
 npm install
