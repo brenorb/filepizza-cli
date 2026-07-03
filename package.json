@@ -29,6 +29,7 @@
     "node": ">=22"
   },
   "dependencies": {
+    "@roamhq/wrtc": "^0.10.0",
     "commander": "^14.0.0",
     "peerjs": "^1.5.5",
     "zod": "^4.1.5"
