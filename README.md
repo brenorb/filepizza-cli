@@ -12,7 +12,40 @@ Current milestones:
 - establish a programmatic uploader peer
 - expose short and long share URLs
 - keep a background seeder alive
-- support `status` and `stop`
+- support `share`, `status`, and `stop`
+
+Current scope:
+
+- single-file uploads
+- JSON output for agent consumption
+- local manifest state under `~/.cache/filepizza-cli/uploads/`
+
+## Usage
+
+Build once:
+
+```bash
+npm install
+npm run build
+```
+
+Create a share URL:
+
+```bash
+node dist/cli.js share /absolute/path/to/file
+```
+
+Inspect an upload:
+
+```bash
+node dist/cli.js status <upload-id>
+```
+
+Stop seeding:
+
+```bash
+node dist/cli.js stop <upload-id>
+```
 
 ## Development
 
@@ -20,6 +53,7 @@ Current milestones:
 npm install
 npm test
 npm run typecheck
+npm run build
 ```
 
 ## Reference
