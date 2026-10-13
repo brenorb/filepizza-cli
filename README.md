@@ -67,3 +67,14 @@ npm run build
 ## Reference
 
 - Upstream app and protocol: <https://github.com/kern/filepizza>
+
+## Verification
+
+```sh
+npm ci
+npm run check
+```
+
+CI runs type checking, tests, build, and an installed-tarball CLI smoke on pull
+requests, main, and version tags. Manual npm publication runs the same check
+through `prepublishOnly`.

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Verify installed package
+        run: |
+          package_dir="$(mktemp -d "$RUNNER_TEMP/package-smoke.XXXXXX")"
+          npm pack --ignore-scripts --pack-destination "$package_dir"
+          npm install --ignore-scripts --prefix "$RUNNER_TEMP/installed" "$package_dir"/*.tgz
+          "$RUNNER_TEMP/installed/node_modules/.bin/filepizza" --help
