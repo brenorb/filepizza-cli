@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -41,7 +41,7 @@ describe("CLI contracts", () => {
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toMatch(/^\d+\.\d+\.\d+$/);
   });
-  it("offers human output by default", async () => {
+  it("offers explicit human output when redirected", async () => {
     await manifest();
     const result = run("status", "sample", "--plain");
     expect(result.status).toBe(0);
@@ -101,6 +101,7 @@ it("does not mistake a command-like operand for the requested help target", () =
 it("rejects conflicting output modes", () => {
   const result = run("status", "sample", "--json", "--plain");
   expect(result.status).toBe(2);
+  expect(result.stderr).toContain("cannot be used with");
 });
 
 it("retains JSON as the default when stdout is redirected", async () => {
@@ -114,4 +115,16 @@ it("validates request timeout before file access or worker spawn", () => {
   const result = run("share", "/nonexistent-file", "--request-timeout", "2147484");
   expect(result.status).toBe(2);
   expect(result.stderr).toContain("request timeout");
+});
+
+it("does not signal a reused PID in a stopped manifest", async () => {
+  const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"]);
+  try {
+    await new Promise<void>((resolve, reject) => { unrelated.once("spawn", resolve); unrelated.once("error", reject); });
+    const entry = await manifest();
+    await writeFile(join(home, ".cache", "filepizza-cli", "uploads", "sample.json"), JSON.stringify({ ...entry, pid: unrelated.pid }));
+    const result = run("stop", "sample");
+    expect(result.status).toBe(0);
+    expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
+  } finally { unrelated.kill(); }
 });

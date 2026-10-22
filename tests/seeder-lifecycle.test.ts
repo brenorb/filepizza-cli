@@ -51,3 +51,20 @@ it("handles renewal failure without an unhandled rejection and records the faile
   expect((await f.store.read("sample")).error).toContain("renewal denied");
   expect(f.peer.destroy).toHaveBeenCalled(); await started.stop();
 });
+
+it("disposes a file handle which resolves after startup cancellation", async () => {
+  const f = await fixture(); const controller = new AbortController();
+  let finishFile!: (value: typeof f.file) => void;
+  const createUploadFile = vi.fn(() => new Promise<typeof f.file>(resolve => { finishFile = resolve; }));
+  const pending = new SeederService({ ...f.deps, createUploadFile, startupTimeoutMs: 10000 }).startUpload({ uploadId: "sample", filePath: "/tmp/demo.txt", signal: controller.signal });
+  await vi.waitFor(() => expect(createUploadFile).toHaveBeenCalled());
+  controller.abort(); await expect(pending).rejects.toThrow(); finishFile(f.file);
+  await vi.waitFor(() => expect(f.file.dispose).toHaveBeenCalledOnce());
+});
+
+it("aborts remote cleanup when the shutdown deadline expires", async () => {
+  const f = await fixture(); let cleanupSignal: AbortSignal | undefined;
+  f.api.destroyChannel.mockImplementation((_slug: string, signal?: AbortSignal) => { cleanupSignal = signal; return new Promise(() => {}); });
+  const started = await new SeederService(f.deps).startUpload({ uploadId: "sample", filePath: "/tmp/demo.txt" });
+  await started.stop(); expect(cleanupSignal?.aborted).toBe(true);
+});

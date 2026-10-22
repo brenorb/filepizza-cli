@@ -24,9 +24,3 @@ export function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-export async function bounded<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error(message)), timeoutMs);
-  try { return await abortable(promise, controller.signal); }
-  finally { clearTimeout(timer); }
-}

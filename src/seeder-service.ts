@@ -1,5 +1,5 @@
 import { basename, resolve } from "node:path";
-import { abortable, bounded } from "./async-control.js";
+import { abortable } from "./async-control.js";
 import { FilePizzaApi, type Channel, type IceConfig } from "./filepizza-api.js";
 import { createPeerFromIce, waitForPeerOpen, type PeerLike } from "./node-peer.js";
 import { createNodeUploadFile, type DisposableUploadFile } from "./node-upload-file.js";
@@ -61,11 +61,14 @@ export class SeederService {
         // Local serving ends immediately even if the remote control plane hangs.
         let warning: string | undefined;
         try { peer?.destroy(); } catch (cause) { warning = `Local peer cleanup failed: ${String(cause)}`; }
+        const cleanupController = new AbortController();
+        const cleanupTimer = setTimeout(() => cleanupController.abort(new Error("Remote/file cleanup timed out; local seeding stopped; remote links may remain until expiry")), this.shutdownTimeoutMs);
         try {
-          const jobs = [uploadFile?.dispose(), channel ? this.api.destroyChannel(channel.shortSlug) : undefined];
-          const results = await bounded(Promise.allSettled(jobs), this.shutdownTimeoutMs, "Remote/file cleanup timed out; local seeding stopped; remote links may remain until expiry");
+          const jobs = [uploadFile?.dispose(), channel ? this.api.destroyChannel(channel.shortSlug, cleanupController.signal) : undefined];
+          const results = await abortable(Promise.allSettled(jobs), cleanupController.signal);
           if (results.some(result => result.status === "rejected" || result.value === false)) warning = "Local seeding stopped; remote/file cleanup failed and remote links may remain until expiry";
         } catch (cause) { warning = cause instanceof Error ? cause.message : String(cause); }
+        finally { clearTimeout(cleanupTimer); }
         manifest = { ...manifest, ok: status !== "error", status, updatedAt: utcNow(), ...(error ? { error } : {}), ...(warning ? { warning } : {}) };
         await this.store.write(manifest);
         return manifest;
