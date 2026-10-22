@@ -21,7 +21,7 @@ program.name("filepizza").description("Create and seed FilePizza shares from you
 
 function timeoutSeconds(value: string): number {
   const seconds = Number(value);
-  if (!Number.isFinite(seconds) || seconds <= 0 || value.trim() === "") {
+  if (!Number.isFinite(seconds) || !Number.isSafeInteger(Math.ceil(seconds * 1000)) || seconds <= 0 || value.trim() === "") {
     throw new InvalidArgumentError("timeout must be a finite positive number of seconds");
   }
   return seconds;
@@ -111,7 +111,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const beforeDash = args.includes("--") ? args.slice(0, args.indexOf("--")) : args;
   if (beforeDash.includes("--help") || beforeDash.includes("-h")) {
-    (program.commands.find(command => command.name() === args[0]) ?? program).outputHelp();
+    (program.commands.find(command => beforeDash.includes(command.name())) ?? program).outputHelp();
     return;
   }
   if (args.length === 0) {

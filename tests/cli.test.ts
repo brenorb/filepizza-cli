@@ -79,3 +79,15 @@ describe("CLI contracts", () => {
     expect(result.stdout).toBe("");
   });
 });
+
+it("resolves subcommand help after global options", () => {
+  const result = run("--quiet", "status", "--help");
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("Usage: filepizza status");
+});
+
+it("rejects timeout durations which overflow milliseconds", () => {
+  const result = run("share", "/nonexistent-file", "--timeout", "1e308");
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("timeout");
+});
