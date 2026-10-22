@@ -77,6 +77,21 @@ Stop seeding:
 node dist/cli.js stop <upload-id>
 ```
 
+## Local state
+
+Manifests live under `$XDG_CACHE_HOME/filepizza-cli/uploads/` when
+`XDG_CACHE_HOME` is absolute; otherwise the default is
+`~/.cache/filepizza-cli/uploads/`. Empty and relative XDG values use the
+default. The existing `FILEPIZZA_CLI_HOME` override takes precedence and uses
+`$FILEPIZZA_CLI_HOME/.cache/filepizza-cli/uploads/` for compatibility.
+
+Manifest writes replace private temporary files atomically; upload directories
+use mode 0700 and manifests 0600 on POSIX. Upload IDs are validated before
+filesystem access. Invalid JSON or manifest fields produce an actionable
+error; restore a known-good backup or remove the corrupt record after checking
+whether its worker is still active. Protect JSON output and backups because
+they may include internal share secrets.
+
 ## Development
 
 ```bash

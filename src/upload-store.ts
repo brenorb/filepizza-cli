@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 export type UploadStatus = "starting" | "seeding" | "stopped" | "error";
 
@@ -27,21 +28,36 @@ export class UploadStore {
   readonly rootDir: string;
   readonly uploadsDir: string;
 
-  constructor(rootDir = join(process.env.FILEPIZZA_CLI_HOME ?? homedir(), ".cache", "filepizza-cli")) {
+  constructor(rootDir = defaultCacheDir()) {
     this.rootDir = rootDir;
     this.uploadsDir = join(rootDir, "uploads");
   }
 
   async write(manifest: UploadManifest): Promise<void> {
-    await mkdir(this.uploadsDir, { recursive: true });
-    await writeFile(this.manifestPath(manifest.uploadId), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    const destination = this.manifestPath(manifest.uploadId);
+    await mkdir(this.uploadsDir, { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") await chmod(this.uploadsDir, 0o700);
+    const temporary = `${destination}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      await rename(temporary, destination);
+    } finally {
+      await rm(temporary, { force: true });
+    }
   }
 
   async read(uploadId: string): Promise<UploadManifest> {
     try {
       const raw = await readFile(this.manifestPath(uploadId), "utf8");
-      return JSON.parse(raw) as UploadManifest;
+      const value = JSON.parse(raw) as unknown;
+      if (!isUploadManifest(value) || value.uploadId !== uploadId) {
+        throw new Error(`Invalid upload manifest for ${uploadId}; restore its cache file from a backup or remove the corrupt record.`);
+      }
+      return value;
     } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(`Invalid upload manifest for ${uploadId}; restore its cache file from a backup or remove the corrupt record.`);
+      }
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         throw new Error(`Unknown upload_id: ${uploadId}`);
       }
@@ -50,8 +66,29 @@ export class UploadStore {
   }
 
   manifestPath(uploadId: string): string {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(uploadId)) {
+      throw new Error("Invalid upload ID; use the identifier printed by filepizza share.");
+    }
     return join(this.uploadsDir, `${uploadId}.json`);
   }
+}
+
+function defaultCacheDir(): string {
+  const legacyHome = process.env.FILEPIZZA_CLI_HOME;
+  if (legacyHome) return join(legacyHome, ".cache", "filepizza-cli");
+  const xdg = process.env.XDG_CACHE_HOME;
+  return join(xdg && isAbsolute(xdg) ? xdg : join(homedir(), ".cache"), "filepizza-cli");
+}
+
+function isUploadManifest(value: unknown): value is UploadManifest {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.ok === "boolean"
+    && ["uploadId", "filePath", "fileName", "startedAt", "updatedAt"].every(key => typeof record[key] === "string")
+    && typeof record.status === "string"
+    && ["starting", "seeding", "stopped", "error"].includes(record.status)
+    && ["peerId", "shortSlug", "longSlug", "shortUrl", "longUrl", "secret", "error"].every(key => record[key] === undefined || typeof record[key] === "string")
+    && (record.pid === undefined || (typeof record.pid === "number" && Number.isSafeInteger(record.pid) && record.pid > 0 && record.pid <= 2 ** 31 - 1));
 }
 
 export function createUploadId(now = new Date()): string {
