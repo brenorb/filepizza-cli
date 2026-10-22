@@ -161,3 +161,79 @@ describe("UploaderSession", () => {
     expect(secondChunk.bytes).toHaveLength(1024);
   });
 });
+
+
+describe("peer failure containment", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("rejects malformed frames without throwing or exposing their contents", () => {
+    const connection = new FakeConnection();
+    new UploaderSession({ files: [createFile(32)] }).attach(connection);
+    expect(() => connection.emit("data", { type: "PRIVATE_MALFORMED_FRAME" })).not.toThrow();
+    expect(connection.closed).toBe(true);
+    expect(JSON.stringify(connection.sent)).not.toContain("PRIVATE_MALFORMED_FRAME");
+  });
+
+  it("contains file-read rejections without an unhandled async error", async () => {
+    const connection = new FakeConnection();
+    const file = createFile(32);
+    file.readRange = async () => { throw new Error("PRIVATE_LOCAL_PATH"); };
+    new UploaderSession({ files: [file] }).attach(connection);
+    connection.emit("data", { type: MessageType.Start, fileName: file.fileName, offset: 0 });
+    await vi.waitFor(() => expect(connection.closed).toBe(true));
+    expect(connection.sent).toContainEqual({ type: MessageType.Error, error: "File transfer failed" });
+    expect(JSON.stringify(connection.sent)).not.toContain("PRIVATE_LOCAL_PATH");
+  });
+
+  it("contains send failures and peer error events", async () => {
+    const connection = new FakeConnection();
+    vi.spyOn(connection, "send").mockImplementation(() => { throw new Error("connection lost"); });
+    new UploaderSession({ files: [createFile(32)] }).attach(connection);
+    expect(() => connection.emit("error", new Error("peer failed"))).not.toThrow();
+    expect(connection.closed).toBe(true);
+  });
+
+  it("contains failures from timer-driven later chunks", async () => {
+    vi.useFakeTimers();
+    const connection = new FakeConnection();
+    const file = createFile(MAX_CHUNK_SIZE + 32);
+    const read = file.readRange;
+    file.readRange = async (offset, end) => {
+      if (offset > 0) throw new Error("disk failed");
+      return read(offset, end);
+    };
+    new UploaderSession({ files: [file], sendDelayMs: 1 }).attach(connection);
+    connection.emit("data", { type: MessageType.Start, fileName: file.fileName, offset: 0 });
+    await vi.advanceTimersByTimeAsync(2);
+    expect(connection.closed).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not send a late chunk after pause", async () => {
+    const connection = new FakeConnection();
+    const file = createFile(32);
+    let finish!: (bytes: Uint8Array) => void;
+    file.readRange = () => new Promise(resolve => { finish = resolve; });
+    new UploaderSession({ files: [file] }).attach(connection);
+    connection.emit("data", { type: MessageType.Start, fileName: file.fileName, offset: 0 });
+    connection.emit("data", { type: MessageType.Pause });
+    finish(new Uint8Array(32));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(connection.sent).toEqual([]);
+  });
+
+  it("isolates chunk scheduling between two peers", async () => {
+    vi.useFakeTimers();
+    const first = new FakeConnection();
+    const second = new FakeConnection();
+    const file = createFile(MAX_CHUNK_SIZE + 32);
+    const session = new UploaderSession({ files: [file], sendDelayMs: 1 });
+    session.attach(first);
+    session.attach(second);
+    first.emit("data", { type: MessageType.Start, fileName: file.fileName, offset: 0 });
+    await vi.advanceTimersByTimeAsync(0);
+    second.emit("close");
+    await vi.advanceTimersByTimeAsync(2);
+    expect(first.sent).toHaveLength(2);
+  });
+});
