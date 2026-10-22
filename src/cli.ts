@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
+import { outputMode } from "./output-mode.js";
 import { startShare, stopShare } from "./lifecycle.js";
 import { spawn } from "node:child_process";
 import { access, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { Command, CommanderError, InvalidArgumentError } from "commander";
+import { Command, CommanderError, InvalidArgumentError, Option } from "commander";
 import { UploadStore, createUploadId, materializeManifestStatus, type UploadManifest } from "./upload-store.js";
 
 const program = new Command();
@@ -14,7 +15,8 @@ const store = new UploadStore();
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 program.name("filepizza").description("Create and seed FilePizza shares from your terminal")
   .version(version)
-  .option("--json", "Print the upload manifest as JSON")
+  .addOption(new Option("--json", "Print the upload manifest as JSON").conflicts("plain"))
+  .option("--plain", "Print human-readable output, including when redirected")
   .option("-q, --quiet", "Suppress progress messages")
   .showHelpAfterError("Run filepizza --help for examples.")
   .exitOverride()
@@ -39,7 +41,7 @@ function printResult(manifest: UploadManifest): void {
     throw new Error(manifest.error ?? `Upload ${manifest.uploadId} failed`);
   }
   if (manifest.warning) process.stderr.write(`warning: ${manifest.warning}\n`);
-  if (program.opts().json) {
+  if (outputMode(program.opts(), Boolean(process.stdout.isTTY)) === "json") {
     process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
   } else {
     process.stdout.write(`Upload: ${manifest.uploadId}\nStatus: ${manifest.status}\nFile: ${manifest.fileName}\n`);
@@ -107,7 +109,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const beforeDash = args.includes("--") ? args.slice(0, args.indexOf("--")) : args;
   if (beforeDash.includes("--help") || beforeDash.includes("-h")) {
-    (program.commands.find(command => beforeDash.includes(command.name())) ?? program).outputHelp();
+    (program.commands.find(command => command.name() === beforeDash.find(arg => program.commands.some(candidate => candidate.name() === arg))) ?? program).outputHelp();
     return;
   }
   if (args.length === 0) {

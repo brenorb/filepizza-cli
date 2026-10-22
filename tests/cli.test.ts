@@ -43,7 +43,7 @@ describe("CLI contracts", () => {
   });
   it("offers human output by default", async () => {
     await manifest();
-    const result = run("status", "sample");
+    const result = run("status", "sample", "--plain");
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Status: stopped");
     expect(result.stdout).toContain("https://file.pizza/sample");
@@ -90,4 +90,28 @@ it("rejects timeout durations which overflow milliseconds", () => {
   const result = run("share", "/nonexistent-file", "--timeout", "1e308");
   expect(result.status).toBe(2);
   expect(result.stderr).toContain("timeout");
+});
+
+it("does not mistake a command-like operand for the requested help target", () => {
+  const result = run("status", "share", "--help");
+  expect(result.status).toBe(0);
+  expect(result.stdout).toContain("Usage: filepizza status");
+});
+
+it("rejects conflicting output modes", () => {
+  const result = run("status", "sample", "--json", "--plain");
+  expect(result.status).toBe(2);
+});
+
+it("retains JSON as the default when stdout is redirected", async () => {
+  await manifest();
+  const result = run("status", "sample");
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ uploadId: "sample", status: "stopped" });
+});
+
+it("validates request timeout before file access or worker spawn", () => {
+  const result = run("share", "/nonexistent-file", "--request-timeout", "2147484");
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain("request timeout");
 });
