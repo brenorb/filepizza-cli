@@ -53,22 +53,22 @@ export function installBrowserLikeGlobals(): void {
   }
 }
 
-export async function waitForPeerOpen(peer: PeerLike): Promise<string> {
-  if (peer.id) {
-    return peer.id;
-  }
-
+export async function waitForPeerOpen(peer: PeerLike, options: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<string> {
+  if (options.signal?.aborted) throw options.signal.reason;
+  if (peer.id) return peer.id;
   return await new Promise<string>((resolve, reject) => {
-    const onOpen = (id: string) => {
-      peer.off?.("error", onError);
-      resolve(id);
-    };
-    const onError = (error: Error) => {
+    const cleanup = () => {
+      clearTimeout(timer);
       peer.off?.("open", onOpen);
-      reject(error);
+      peer.off?.("error", onError);
+      options.signal?.removeEventListener("abort", onAbort);
     };
-
+    const onOpen = (id: string) => { cleanup(); resolve(id); };
+    const onError = (error: Error) => { cleanup(); reject(error); };
+    const onAbort = () => { cleanup(); reject(options.signal?.reason ?? new Error("Peer startup cancelled")); };
+    const timer = setTimeout(() => onError(new Error("Peer startup timed out")), options.timeoutMs ?? 30000);
     peer.on("open", onOpen);
     peer.on("error", onError);
+    options.signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
