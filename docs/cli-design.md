@@ -35,4 +35,10 @@ renewal failures, worker control markers, stdout modes, strict arguments and
 closed pipes. A real disposable process checks that a stale PID in a stopped
 record is preserved. An actual pseudo-terminal status invocation confirms the
 terminal human default; redirected process tests confirm compatible JSON.
-Public FilePizza/WebRTC interoperability requires separate live verification.
+For separate live verification, pack/install the production package and run
+`node scripts/e2e-live.mjs /path/to/node_modules/filepizza-cli`. This creates a
+generated public fixture, starts the installed CLI's detached worker against
+the hosted FilePizza service, downloads through a separate native WebRTC peer,
+checks all bytes across multiple frames, and stops the share through the CLI.
+It requires network access and the platform's native WebRTC binding. It is a
+manual check, since public service availability is outside this repository.
