@@ -75,7 +75,8 @@ Shutdown stops local serving immediately and bounds remote/file cleanup at
 five seconds. If remote channel deletion fails or times out, local state
 records a warning; remote links may remain until expiry. Renewal failures stop
 local serving and persist an error, visible through `status`. A stopped
-worker is never reported as a ready share.
+worker is never reported as a ready share. Malformed peer messages and failed
+transfers close the affected connection without crashing other downloads.
 
 Local build:
 

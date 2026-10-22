@@ -5,7 +5,7 @@ import { startShare, stopShare } from "./lifecycle.js";
 import { spawn } from "node:child_process";
 import { access, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { resolveWorkerCommand } from "./worker-command.js";
 import { Command, CommanderError, InvalidArgumentError, Option } from "commander";
 import { UploadStore, createUploadId, materializeManifestStatus, type UploadManifest } from "./upload-store.js";
 
@@ -64,7 +64,7 @@ program
 
     const uploadId = createUploadId();
     const timeoutMs = options.timeout * 1000;
-    const worker = resolveWorkerCommand();
+    const worker = resolveWorkerCommand(import.meta.url);
 
     const controller = new AbortController();
     const interrupt = () => controller.abort();
@@ -138,19 +138,4 @@ main().catch((error: unknown) => {
   process.stderr.write(`filepizza: ${message}\n`);
   process.exitCode = error instanceof Error && error.name === "AbortError" ? 130 : 1;
 });
-
-function resolveWorkerCommand(): { command: string; args: string[] } {
-  const currentPath = fileURLToPath(import.meta.url);
-  if (currentPath.includes("/src/")) {
-    return {
-      command: process.execPath,
-      args: ["--import", "tsx", fileURLToPath(new URL("./worker.ts", import.meta.url))],
-    };
-  }
-
-  return {
-    command: process.execPath,
-    args: [fileURLToPath(new URL("./worker.js", import.meta.url))],
-  };
-}
 
