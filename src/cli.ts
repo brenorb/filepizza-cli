@@ -138,4 +138,3 @@ main().catch((error: unknown) => {
   process.stderr.write(`filepizza: ${message}\n`);
   process.exitCode = error instanceof Error && error.name === "AbortError" ? 130 : 1;
 });
-
