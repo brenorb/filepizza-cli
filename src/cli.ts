@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { startShare, stopShare } from "./lifecycle.js";
 import { spawn } from "node:child_process";
 import { access, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -27,10 +28,17 @@ function timeoutSeconds(value: string): number {
   return seconds;
 }
 
+function requestTimeoutSeconds(value: string): number {
+  const seconds = timeoutSeconds(value);
+  if (seconds * 1000 > 2147483647) throw new InvalidArgumentError("request timeout must be at most 2147483.647 seconds");
+  return seconds;
+}
+
 function printResult(manifest: UploadManifest): void {
   if (manifest.status === "error" || !manifest.ok) {
     throw new Error(manifest.error ?? `Upload ${manifest.uploadId} failed`);
   }
+  if (manifest.warning) process.stderr.write(`warning: ${manifest.warning}\n`);
   if (program.opts().json) {
     process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
   } else {
@@ -47,7 +55,8 @@ program
   .argument("<file>", "Path to the file to share")
   .description("Start a background seeder and print its share URL")
   .option("--timeout <seconds>", "Seconds to wait for the share URL", timeoutSeconds, 30)
-  .action(async (file: string, options: { timeout: number }) => {
+  .option("--request-timeout <seconds>", "Deadline for each HTTP request including response body", requestTimeoutSeconds, 10)
+  .action(async (file: string, options: { timeout: number; requestTimeout: number }) => {
     await access(file);
     if (!(await stat(file)).isFile()) throw new Error(`Expected a regular file: ${file}`);
 
@@ -55,17 +64,20 @@ program
     const timeoutMs = options.timeout * 1000;
     const worker = resolveWorkerCommand();
 
-    const child = spawn(worker.command, [...worker.args, "--upload-id", uploadId, "--file", file], {
-      detached: true,
-      stdio: "ignore",
-      env: process.env,
-    });
-    child.unref();
-
-    if (!program.opts().quiet) process.stderr.write(`Starting background share ${uploadId}...\n`);
-
-    const manifest = await waitForUploadReady(store, uploadId, timeoutMs);
-    printResult(manifest);
+    const controller = new AbortController();
+    const interrupt = () => controller.abort();
+    process.once("SIGINT", interrupt);
+    process.once("SIGTERM", interrupt);
+    try {
+      if (!program.opts().quiet) process.stderr.write(`Starting background share ${uploadId}...\n`);
+      const manifest = await startShare(store, uploadId, () => spawn(worker.command, [...worker.args, "--upload-id", uploadId, "--file", file, "--request-timeout", String(Math.ceil(options.requestTimeout * 1000))], {
+        detached: true, stdio: "ignore", env: process.env,
+      }), timeoutMs, controller.signal);
+      printResult(manifest);
+    } finally {
+      process.off("SIGINT", interrupt);
+      process.off("SIGTERM", interrupt);
+    }
   });
 
 program
@@ -83,23 +95,7 @@ program
   .argument("<uploadId>", "Upload identifier")
   .option("--timeout <seconds>", "Seconds to wait for shutdown", timeoutSeconds, 15)
   .action(async (uploadId: string, options: { timeout: number }) => {
-    const manifest = await store.read(uploadId);
-    const pid = manifest.pid;
-    if (typeof pid === "number") {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch (error) {
-        if (!(error instanceof Error) || !error.message.includes("ESRCH")) {
-          throw error;
-        }
-      }
-    }
-
-    const stopped = await waitForUploadStopped(
-      store,
-      uploadId,
-      options.timeout * 1000,
-    );
+    const stopped = await stopShare(store, uploadId, options.timeout * 1000);
     printResult(stopped);
   });
 
@@ -128,7 +124,7 @@ async function main(): Promise<void> {
 process.stdout.on("error", (error: NodeJS.ErrnoException) => {
   if (error.code === "EPIPE") process.exit(0);
   process.stderr.write(`filepizza: could not write output: ${error.message}\n`);
-  process.exitCode = 1;
+  process.exitCode = error instanceof Error && error.name === "AbortError" ? 130 : 1;
 });
 
 main().catch((error: unknown) => {
@@ -138,7 +134,7 @@ main().catch((error: unknown) => {
   }
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`filepizza: ${message}\n`);
-  process.exitCode = 1;
+  process.exitCode = error instanceof Error && error.name === "AbortError" ? 130 : 1;
 });
 
 function resolveWorkerCommand(): { command: string; args: string[] } {
@@ -156,52 +152,3 @@ function resolveWorkerCommand(): { command: string; args: string[] } {
   };
 }
 
-async function waitForUploadReady(
-  uploadStore: UploadStore,
-  uploadId: string,
-  timeoutMs: number,
-): Promise<UploadManifest> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    try {
-      const manifest = materializeManifestStatus(await uploadStore.read(uploadId));
-      if (manifest.status === "error") {
-        throw new Error(manifest.error ?? `Upload ${uploadId} failed`);
-      }
-      if (manifest.shortUrl && manifest.longUrl) {
-        return manifest;
-      }
-    } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes("Unknown upload_id")) {
-        throw error;
-      }
-    }
-
-    await sleep(250);
-  }
-
-  throw new Error(`Timed out waiting for upload ${uploadId} to become ready`);
-}
-
-async function waitForUploadStopped(
-  uploadStore: UploadStore,
-  uploadId: string,
-  timeoutMs: number,
-): Promise<UploadManifest> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const manifest = materializeManifestStatus(await uploadStore.read(uploadId));
-    if (manifest.status === "stopped" || manifest.status === "error") {
-      return manifest;
-    }
-    await sleep(250);
-  }
-
-  throw new Error(`Timed out waiting for upload ${uploadId} to stop`);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}

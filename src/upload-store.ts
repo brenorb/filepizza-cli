@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -11,6 +11,8 @@ export type UploadManifest = {
   filePath: string;
   fileName: string;
   pid?: number;
+  controlVersion?: 1;
+  warning?: string;
   peerId?: string;
   shortSlug?: string;
   longSlug?: string;
@@ -65,6 +67,33 @@ export class UploadStore {
     }
   }
 
+  async requestStop(uploadId: string): Promise<void> {
+    const marker = this.stopRequestPath(uploadId);
+    await mkdir(this.uploadsDir, { recursive: true, mode: 0o700 });
+    if (process.platform !== "win32") await chmod(this.uploadsDir, 0o700);
+    const temporary = `${marker}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, "stop\n", { mode: 0o600, flag: "wx" });
+      await rename(temporary, marker);
+    } finally { await rm(temporary, { force: true }); }
+  }
+
+  async isStopRequested(uploadId: string): Promise<boolean> {
+    try { await access(this.stopRequestPath(uploadId)); return true; }
+    catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
+  async clearStopRequest(uploadId: string): Promise<void> {
+    await rm(this.stopRequestPath(uploadId), { force: true });
+  }
+
+  private stopRequestPath(uploadId: string): string {
+    return this.manifestPath(uploadId).replace(/\.json$/, ".stop");
+  }
+
   manifestPath(uploadId: string): string {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(uploadId)) {
       throw new Error("Invalid upload ID; use the identifier printed by filepizza share.");
@@ -87,7 +116,8 @@ function isUploadManifest(value: unknown): value is UploadManifest {
     && ["uploadId", "filePath", "fileName", "startedAt", "updatedAt"].every(key => typeof record[key] === "string")
     && typeof record.status === "string"
     && ["starting", "seeding", "stopped", "error"].includes(record.status)
-    && ["peerId", "shortSlug", "longSlug", "shortUrl", "longUrl", "secret", "error"].every(key => record[key] === undefined || typeof record[key] === "string")
+    && ["peerId", "shortSlug", "longSlug", "shortUrl", "longUrl", "secret", "error", "warning"].every(key => record[key] === undefined || typeof record[key] === "string")
+    && (record.controlVersion === undefined || record.controlVersion === 1)
     && (record.pid === undefined || (typeof record.pid === "number" && Number.isSafeInteger(record.pid) && record.pid > 0 && record.pid <= 2 ** 31 - 1));
 }
 
@@ -117,7 +147,7 @@ export function isPidAlive(pid: number | undefined): boolean {
 
 export function materializeManifestStatus(manifest: UploadManifest): UploadManifest {
   const alive = isPidAlive(manifest.pid);
-  if (manifest.status === "seeding" && !alive) {
+  if ((manifest.status === "seeding" || manifest.status === "starting") && !alive) {
     return {
       ...manifest,
       alive,
