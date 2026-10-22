@@ -17,10 +17,14 @@ Current milestones:
 Current scope:
 
 - single-file uploads
-- JSON output for agent consumption
+- concise human output, with explicit JSON output for scripts
 - local manifest state under `~/.cache/filepizza-cli/uploads/`
 
 ## Usage
+
+Run `filepizza` for a short introduction, `filepizza --help` for all commands,
+or `filepizza help share` for command help. `--version` reports the installed
+package version. Help includes examples and links to documentation and issues.
 
 Install-free with npm:
 
@@ -29,6 +33,24 @@ npx filepizza-cli share /absolute/path/to/file
 npx filepizza-cli status <upload-id>
 npx filepizza-cli stop <upload-id>
 ```
+
+Commands print a concise result to stdout and diagnostics to stderr. Use
+`--json` on `share`, `status`, or `stop` to obtain the upload manifest as JSON:
+
+```bash
+npx filepizza-cli status <upload-id> --json
+npx filepizza-cli share ./report.pdf --json > share.json
+```
+
+**Script migration:** earlier versions emitted JSON by default. Add `--json`
+to existing automation. The manifest fields are unchanged; a manifest may
+contain the share's internal secret, so store JSON output privately.
+
+`--quiet` suppresses startup progress without hiding results or errors.
+`share` and `stop` accept a finite positive `--timeout` in seconds (defaults:
+30 and 15 respectively). Usage errors exit with status 2; operational errors
+and failed uploads exit with status 1. Successful commands and help exit 0.
+Argument validation runs before a background worker starts.
 
 Local build:
 
