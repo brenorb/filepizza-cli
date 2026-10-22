@@ -11,9 +11,9 @@ it("a private stop marker cancels startup without signalling a PID", async () =>
     const store = new UploadStore(root);
     await store.requestStop("sample");
     let cancelled = false;
-    const service = { startUpload: vi.fn(async (options: { signal: AbortSignal }) => new Promise<never>((_, reject) => {
-      const abort = () => { cancelled = true; reject(options.signal.reason); };
-      if (options.signal.aborted) abort(); else options.signal.addEventListener("abort", abort, { once: true });
+    const service = { startUpload: vi.fn(async (options: { signal?: AbortSignal }) => new Promise<never>((_, reject) => {
+      const abort = () => { cancelled = true; reject(options.signal!.reason); };
+      if (options.signal!.aborted) abort(); else options.signal!.addEventListener("abort", abort, { once: true });
     })) };
     expect(await runBackgroundWorker({ store, service, uploadId: "sample", filePath: "/tmp/demo.txt", pollMs: 1 })).toBe(0);
     expect(cancelled).toBe(true);
