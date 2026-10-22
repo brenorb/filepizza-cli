@@ -128,3 +128,14 @@ it("does not signal a reused PID in a stopped manifest", async () => {
     expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
   } finally { unrelated.kill(); }
 });
+
+it("handles a consumer closing stdout without an uncaught exception", async () => {
+  const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "--help"], { cwd: process.cwd(), env: { ...process.env, FILEPIZZA_CLI_HOME: home }, stdio: ["ignore", "pipe", "pipe"] });
+  let errors = ""; child.stderr.on("data", data => { errors += data.toString(); });
+  child.stdout.destroy();
+  const timer = setTimeout(() => child.kill(), 5000);
+  try {
+    const code = await new Promise<number | null>((resolve, reject) => { child.once("exit", resolve); child.once("error", reject); });
+    expect(code).toBe(0); expect(errors).toBe("");
+  } finally { clearTimeout(timer); }
+});
