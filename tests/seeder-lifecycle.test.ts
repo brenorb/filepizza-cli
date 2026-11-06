@@ -36,6 +36,43 @@ it("cancels a hanging startup and records a stopped upload", async () => {
   expect((await f.store.read("sample")).status).toBe("stopped");
 });
 
+it("keeps a peer failure terminal when a readiness write is delayed", async () => {
+  const f = await fixture();
+  f.api.createChannel.mockResolvedValue({ shortSlug: "x", longSlug: "y", uploaderPeerID: "peer-1" });
+  let markReadyWriteStarted!: () => void;
+  let resumeReadyWrite!: () => void;
+  const readyWriteStarted = new Promise<void>(resolve => { markReadyWriteStarted = resolve; });
+  const readyWritePaused = new Promise<void>(resolve => { resumeReadyWrite = resolve; });
+  const write = f.store.write.bind(f.store);
+  vi.spyOn(f.store, "write").mockImplementation(async (...args) => {
+    if (args[0].status === "seeding") {
+      markReadyWriteStarted();
+      await readyWritePaused;
+    }
+    await write(...args);
+  });
+
+  const service = new SeederService({ ...f.deps, startupTimeoutMs: 1000 });
+  const outcome = service.startUpload({ uploadId: "sample", filePath: "/tmp/demo.txt" })
+    .then(() => "ready", () => "rejected");
+  await readyWriteStarted;
+  try {
+    f.peer.emit("error", new Error("connection lost"));
+    await vi.waitFor(async () => expect((await f.store.read("sample")).status).toBe("error"));
+  } finally {
+    resumeReadyWrite();
+  }
+
+  const result = await outcome;
+  expect(f.peer.destroy).toHaveBeenCalledOnce();
+  expect(f.api.destroyChannel).toHaveBeenCalledOnce();
+  expect(await f.store.read("sample")).toMatchObject({
+    status: "error",
+    error: "Peer failed: connection lost",
+  });
+  expect(result).toBe("rejected");
+});
+
 it("shutdown stops local serving before a hung remote deletion and returns with a warning", async () => {
   const f = await fixture(); f.api.destroyChannel.mockImplementation(() => new Promise(() => {}));
   const started = await new SeederService(f.deps).startUpload({ uploadId: "sample", filePath: "/tmp/demo.txt" });

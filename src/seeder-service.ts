@@ -55,7 +55,6 @@ export class SeederService {
     const cleanup = (status: "stopped" | "error", error?: string): Promise<UploadManifest> => {
       if (stopPromise) return stopPromise;
       stopPromise = Promise.resolve().then(async () => {
-        lifetime.abort();
         clearTimeout(startupTimer);
         if (renewTimer) clearInterval(renewTimer);
         // Local serving ends immediately even if the remote control plane hangs.
@@ -73,6 +72,7 @@ export class SeederService {
         await this.store.write(manifest);
         return manifest;
       });
+      lifetime.abort();
       return stopPromise;
     };
     try {
@@ -86,7 +86,8 @@ export class SeederService {
       const session = new UploaderSession({ files: [uploadFile], password: options.password });
       peer.on("connection", connection => { session.attach(connection); });
       manifest = { ...manifest, peerId, shortSlug: channel.shortSlug, longSlug: channel.longSlug, secret: channel.secret, shortUrl: this.api.channelUrl(channel.shortSlug), longUrl: this.api.channelUrl(channel.longSlug), status: "seeding", updatedAt: utcNow() };
-      await this.store.write(manifest);
+      await this.store.write(manifest, startupSignal);
+      startupSignal.throwIfAborted();
       clearTimeout(startupTimer);
       if (channel.secret) {
         const liveChannel = channel;

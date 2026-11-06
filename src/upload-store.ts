@@ -1,3 +1,4 @@
+import { renameSync } from "node:fs";
 import { access, chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
@@ -35,16 +36,24 @@ export class UploadStore {
     this.uploadsDir = join(rootDir, "uploads");
   }
 
-  async write(manifest: UploadManifest): Promise<void> {
+  async write(manifest: UploadManifest, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     const destination = this.manifestPath(manifest.uploadId);
     await mkdir(this.uploadsDir, { recursive: true, mode: 0o700 });
     if (process.platform !== "win32") await chmod(this.uploadsDir, 0o700);
     const temporary = `${destination}.${randomUUID()}.tmp`;
     try {
-      await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
-      await rename(temporary, destination);
-    } finally {
+      await writeFile(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx", signal });
+      if (signal) {
+        // Publish readiness without yielding after checking cancellation.
+        signal.throwIfAborted();
+        renameSync(temporary, destination);
+      } else {
+        await rename(temporary, destination);
+      }
+    } catch (error) {
       await rm(temporary, { force: true });
+      throw error;
     }
   }
 
