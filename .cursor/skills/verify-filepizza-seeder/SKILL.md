@@ -31,7 +31,7 @@ TLC explores one upload on the channel path with a renewal secret. One startup w
 
 `TerminalRecordStaysTerminal` fails on the reviewed commit. A peer fails while the seeding manifest is waiting to be written. Cleanup destroys the peer and records the failure. The original write then records seeding again. pstack's `/statechart` explored 44 states, found the eight-step path, and checked `NoDeadlock`.
 
-To replay in a disposable checkout with dependencies installed, copy [the local fixture](references/seeder-trace.test.ts) to `tests/formal-seeder-trace.test.ts` and run `npm test -- tests/formal-seeder-trace.test.ts tests/seeder-lifecycle.test.ts`. The fixture delays the first manifest write and uses the real `UploadStore` and a fake peer. It observed the terminal record first and the stale record second. Its assertions describe the behavior on the reviewed commit.
+To replay in a disposable checkout with dependencies installed, copy [the local fixture](references/seeder-trace.test.ts) to `tests/formal-seeder-trace.test.ts` and run `npm test -- tests/formal-seeder-trace.test.ts tests/seeder-lifecycle.test.ts`. The fixture delays the seeding manifest write and uses the real `UploadStore` and a fake peer. It observed the terminal record first and the stale record second. Its assertions describe the behavior on the reviewed commit.
 
 ## Release cited by Freedom Skills
 
@@ -42,6 +42,16 @@ sh scripts/check-cli-state-machine.sh .cursor/skills/verify-filepizza-seeder/See
 ```
 
 `LocalPeerStopsWithinCleanupBudget` fails when the remote deletion is still pending after a stop. To replay the ordering, replace only `src/seeder-service.ts` in the disposable main checkout with the release module and run `npm test -- tests/formal-seeder-trace.test.ts -t 'closes the local peer'`. The fixture observed that the release had made no call to destroy the peer when remote deletion began. The current source passed after restoration.
+
+## Peer readiness watchers
+
+`PeerReady.tla` models `waitForPeerOpen` in `src/node-peer.ts`. The waiter checks for an already-aborted signal or known peer ID, then settles on open, error, abort, or timeout. It assumes a PeerJS peer that implements `off`. The current model exhausted 12 states with all watchers removed on settlement. The broken config leaves the open callback attached. The legacy config reflects the release removing only the opposite event's callback.
+
+```sh
+sh scripts/check-cli-state-machine.sh .cursor/skills/verify-filepizza-seeder/PeerReady.tla
+```
+
+Use `PeerReady-broken.cfg` or `PeerReady-legacy.cfg` from the same directory as the second argument to check the expected violation. Copy [the local fixture](references/peer-open-trace.test.ts) to `tests/formal-peer-open.test.ts` in a disposable checkout and run `npm test -- tests/formal-peer-open.test.ts`. The fixture detects an open callback left attached if `peer.off?.("open", onOpen)` is removed or if the release module is substituted.
 
 ## Verify a change
 
