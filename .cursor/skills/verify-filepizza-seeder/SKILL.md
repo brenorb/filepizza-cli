@@ -33,6 +33,16 @@ TLC explores one upload on the channel path with a renewal secret. One startup w
 
 To replay in a disposable checkout with dependencies installed, copy [the local fixture](references/seeder-trace.test.ts) to `tests/formal-seeder-trace.test.ts` and run `npm test -- tests/formal-seeder-trace.test.ts tests/seeder-lifecycle.test.ts`. The fixture delays the first manifest write and uses the real `UploadStore` and a fake peer. It observed the terminal record first and the stale record second. Its assertions describe the behavior on the reviewed commit.
 
+## Release cited by Freedom Skills
+
+`SeederLegacy.tla` models `0.1.0` at `6f289039c02044586be6914460a51679f434e9ec`. It follows acquisition through file, ICE, peer, channel and manifest, models up to two concurrent renewal callbacks, and distinguishes successful and failed startup cleanup. On a normal stop, the release awaits remote channel deletion before it closes the local peer. The teardown budget in the model is an elapsed interval observed outside the operation. The model assumes successful local resource disposal and abstracts the worker's exit and store I/O.
+
+```sh
+sh scripts/check-cli-state-machine.sh .cursor/skills/verify-filepizza-seeder/SeederLegacy.tla
+```
+
+`LocalPeerStopsWithinCleanupBudget` fails when the remote deletion is still pending after a stop. To replay the ordering, replace only `src/seeder-service.ts` in the disposable main checkout with the release module and run `npm test -- tests/formal-seeder-trace.test.ts -t 'closes the local peer'`. The fixture observed that the release had made no call to destroy the peer when remote deletion began. The current source passed after restoration.
+
 ## Verify a change
 
 1. Compare the covered methods with the reviewed commit, paying particular attention to where each manifest is captured and which asynchronous write can finish last.

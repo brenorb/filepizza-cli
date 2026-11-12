@@ -53,3 +53,42 @@ it("replays the in-flight seeding write after peer cleanup", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it("closes the local peer before waiting for remote link deletion", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pizza-legacy-seeder-trace-"));
+  const remoteEntered = Promise.withResolvers<void>();
+  const releaseRemote = Promise.withResolvers<boolean>();
+  const peer = Object.assign(new EventEmitter(), { id: "local-test-peer", destroy: vi.fn() });
+  const service = new SeederService({
+    store: new UploadStore(root),
+    createPeer: async () => peer,
+    createUploadFile: async () => ({
+      filePath: "/fixture.txt", fileName: "fixture.txt", size: 1, type: "text/plain",
+      readRange: async () => Uint8Array.of(0), dispose: async () => {},
+    }),
+    api: {
+      getIceConfig: async () => ({ host: "test", path: "/", iceServers: [] }),
+      createChannel: async () => ({ shortSlug: "short", longSlug: "long", uploaderPeerID: peer.id }),
+      renewChannel: async () => true,
+      destroyChannel: () => {
+        remoteEntered.resolve();
+        return releaseRemote.promise;
+      },
+      channelUrl: slug => `https://file.invalid/${slug}`,
+    },
+  });
+  let stopping: Promise<unknown> | undefined;
+  try {
+    const started = await service.startUpload({ uploadId: "test", filePath: "/fixture.txt" });
+    stopping = started.stop();
+    await remoteEntered.promise;
+    expect(peer.destroy).toHaveBeenCalledOnce();
+  } finally {
+    releaseRemote.resolve(true);
+    try {
+      await stopping;
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});
