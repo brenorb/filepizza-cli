@@ -28,6 +28,18 @@ TLC explores two connections, at most two accepted starts per connection, and tw
 
 The baseline exhausted 7,073 distinct states. With the post-read guard disabled in the model, TLC found a stale send after two starts. Removing the corresponding source guard in a scratch copy made the existing deferred-read test observe a chunk after pause. The nine uploader-session tests passed after restoring the guard.
 
+## Release cited by Freedom Skills
+
+Freedom Skills pins FilePizza `0.1.0`, source commit `6f289039c02044586be6914460a51679f434e9ec`. `TransferLegacy.tla` models that release's `UploaderSession`: `sendChunkTimeout` holds a single shared reference, so clearing it can cancel another recipient's scheduled piece. A read already in flight can still send after its transfer becomes inactive. `reads` and `timers` track outstanding callbacks independently of the shared handle. The model assumes two recipients, two chunks, up to two starts per recipient, and successful reads and sends.
+
+```sh
+sh scripts/check-cli-state-machine.sh .cursor/skills/verify-filepizza-transfer/TransferLegacy.tla
+```
+
+The command reports the first violation. pstack's `/statechart` reached 21,985 states, reported both three-step counterexamples, and checked `NoDeadlock`. See the [release chart](../../../docs/statecharts/download-legacy.md).
+
+The release source reproduced a late send and interference between recipients in a local fixture. To compare, use a disposable checkout of the reviewed main commit with dependencies installed. Replace only `src/uploader-session.ts` with `git show 6f289039c02044586be6914460a51679f434e9ec:src/uploader-session.ts`, then run `npm test -- tests/uploader-session.test.ts -t 'late chunk after pause|chunk scheduling between two peers'`. Both tests fail on the release module and pass on the reviewed main module.
+
 ## Verify a change
 
 1. Compare the covered methods with the reviewed commit. Update the actions at each changed callback, await boundary, or guard.

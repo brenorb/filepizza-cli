@@ -1,0 +1,31 @@
+---
+title: "FilePizza 0.1.0 download failure paths"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Breaks OnlyCurrentReadsSend or RecipientTimersAreIndependent
+    lg1: Path to the OnlyCurrentReadsSend or RecipientTimersAreIndependent bug
+  }
+  class lg0 breaks
+  class lg1 bugPath
+  s0: Recipients have opened the link
+  s1: Reading the first piece
+  s2: Waiting to send the next piece
+  s3: The first read is still pending after restart
+  s4: An old download sends a piece
+  s5: One download loses its next piece
+  [*] --> s0
+  s0 --> s1: a recipient starts downloading
+  s1 --> s2: the piece arrives
+  s1 --> s3: the recipient restarts
+  s2 --> s5: a second recipient starts downloading
+  s3 --> s4: the piece arrives
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 bugPath
+  class s1 bugPath
+  class s2 bugPath
+  class s3 bugPath
+  class s4 breaks
+  class s4 bugPath
+  class s5 breaks
+  class s5 bugPath
