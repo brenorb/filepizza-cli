@@ -28,6 +28,18 @@ TLC explores one upload, at most one foreground share and one independent stop i
 
 The baseline exhausted 298 states. The broken config reaches a marker write for a legacy worker in two steps. Removing the `controlVersion` guard from `stopShare` in a scratch copy made the real test report a timeout instead of rejecting the legacy worker immediately. The ten lifecycle and worker-runtime tests passed after restoring the guard.
 
+## Release cited by Freedom Skills
+
+`ShareLegacy.tla` models `0.1.0` at `6f289039c02044586be6914460a51679f434e9ec`. In `src/cli.ts`, `waitForUploadReady` accepts both URLs after it materializes PID liveness. The corresponding `materializeManifestStatus` maps a seeding record with a dead PID to stopped. The model allows the worker to exit before the next poll and represents `stop` as signal delivery and a wait for the terminal record. It assumes PIDs identify their original worker while live and abstracts OS signal failures and upload store errors.
+
+```sh
+sh scripts/check-cli-state-machine.sh .cursor/skills/verify-filepizza-share/ShareLegacy.tla
+```
+
+`PrintedShareWasSeeding` fails after five steps. The worker records both URLs and exits, then `share` prints the stopped record as a successful response.
+
+To replay the read in a disposable checkout of `0.1.0`, copy [the local worker fixture](references/ended-worker.ts) to `src/worker.ts` and install the CLI dependencies. Point `FILEPIZZA_CLI_HOME` at an empty temporary directory and run `node --import tsx src/cli.ts share package.json --timeout 5`. The fixture writes a valid seeding record with the PID of an already-exited local process. The real CLI exits successfully with `status: "stopped"`, `alive: false`, and both URLs.
+
 ## Verify a change
 
 1. Compare the covered methods with the reviewed commit. Update the model when the boundary between a worker event, record observation, or stop request changes.
