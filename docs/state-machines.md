@@ -1,0 +1,17 @@
+# FilePizza CLI state machines
+
+This inventory covers main at `b89157a3dc71a933043e42a96b7af890bdf17827` and the `0.1.0` release cited by Freedom Skills at `6f289039c02044586be6914460a51679f434e9ec`. The published package exposes `filepizza share`, `filepizza status`, and `filepizza stop`. It launches a detached worker. The current repository also exposes the manual `scripts/e2e-live.mjs` check.
+
+| Subsystem | Commands and source | Model and observations |
+| --- | --- | --- |
+| Foreground and worker supervision | `share`, `status`, `stop`, and the detached worker in `src/cli.ts`, `src/lifecycle.ts`, `src/worker.ts`, and `src/worker-runtime.ts` | The current cooperative stop rejects an unsupported worker. The cited release can print both URLs for a worker that has already exited. [Skill](../.cursor/skills/verify-filepizza-share/SKILL.md) · [Share chart](statecharts/share.md) |
+| Seeder startup, link renewal, and teardown | `src/seeder-service.ts`, `src/node-peer.ts`, and `src/node-upload-file.ts` | Main can replace a terminal manifest with an older seeding write. The cited release waits on remote deletion before closing its local peer and retains a readiness listener after the corresponding event. [Skill](../.cursor/skills/verify-filepizza-seeder/SKILL.md) · [Seeder chart](statecharts/seeder.md) |
+| Transfer per recipient | `src/uploader-session.ts` and `src/messages.ts` | Main invalidates pending reads and timers per connection. The cited release can send an old read and lose a recipient's scheduled piece when another recipient starts. [Skill](../.cursor/skills/verify-filepizza-transfer/SKILL.md) · [Download chart](statecharts/download.md) · [Release failure paths](statecharts/download-legacy.md) |
+| Manifest and stop-marker publication | `src/upload-store.ts`, used by the foreground commands and worker | Atomic replacement preserves a complete manifest for readers. The cited release can expose incomplete JSON during a write. [Skill](../.cursor/skills/verify-filepizza-store/SKILL.md) |
+| HTTP request settlement | `src/filepizza-api.ts`, used during startup, renewal, and shutdown | The current deadline settles the caller even while an adapter is stalled. The cited release has no internal request deadline. [Skill](../.cursor/skills/verify-filepizza-http/SKILL.md) |
+| Cancellation and late resources | `src/async-control.ts`, used by supervision and resource acquisition | A successful resource creation after cancellation still queues disposal. [Skill](../.cursor/skills/verify-filepizza-cancellation/SKILL.md) |
+| Live-check entrypoint | `scripts/e2e-live.mjs` | The CLI compares the received bytes before reporting success, then stops the worker and waits for exit. [Skill](../.cursor/skills/verify-filepizza-live-check/SKILL.md) |
+
+`src/output-mode.ts` chooses JSON or plain output from flags and terminal presence. `src/worker-command.ts` resolves a launch command from the module path. These are one-shot decisions. Intro, help, version, usage errors, and stdout exit handling are terminal CLI paths. The metadata response in `UploaderSession.handleIncoming` checks the configured password for each relevant request and retains no separate challenge state. Transfer state is the per-recipient scheduling and close state.
+
+The models cover code in this repository. The behavior of the hosted HTTP service, the recipient browser, PeerJS/WebRTC, and OS process and filesystem primitives enters through modeled outcomes. Source replays use local fixtures or existing tests.
