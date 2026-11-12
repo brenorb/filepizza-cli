@@ -1,0 +1,35 @@
+---
+title: "FilePizza link availability and seeder shutdown"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: Breaks TerminalRecordStaysTerminal
+    lg1: Path to the TerminalRecordStaysTerminal bug
+  }
+  class lg0 breaks
+  class lg1 bugPath
+  s0: Starting the share
+  s1: Share unavailable, cleanup in progress
+  s2: Share failure recorded
+  s3: Share stopped
+  s4: Link created, waiting for it to be saved
+  s5: Link available
+  s6: Stopped link reported as available
+  [*] --> s0
+  s0 --> s0: the file opens or the connection settings arrive or the connection opens
+  s0 --> s1: the share fails or the sender stops the share
+  s1 --> s2: the failure is saved
+  s1 --> s3: the stopped status is saved
+  s0 --> s4: the service creates the link
+  s4 --> s5: the link is saved
+  s4 --> s1: the share fails
+  s5 --> s1: the share fails or the sender stops the share
+  s1 --> s1: cleanup finishes or reaches its deadline
+  s2 --> s6: the link is saved
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 bugPath
+  class s1 bugPath
+  class s2 bugPath
+  class s4 bugPath
+  class s6 breaks
+  class s6 bugPath

@@ -1,0 +1,40 @@
+---
+name: verify-filepizza-seeder
+description: Model-check FilePizza seeder startup, link publication, renewal, and cleanup when changing SeederService or how the upload manifest is persisted.
+---
+
+# Verify FilePizza seeder startup and cleanup
+
+Once the upload manifest records a stop or failure, an older startup write should never mark that upload as seeding. A sender could otherwise see a ready link for a peer that has already shut down.
+
+Run from the repository root with Java 11 or later and `TLA2TOOLS` set to the absolute path of the official [TLA+ 1.7.4 release JAR](https://github.com/tlaplus/tlaplus/releases/tag/v1.7.4).
+
+```sh
+sh scripts/check-cli-state-machine.sh .cursor/skills/verify-filepizza-seeder/Seeder.tla
+```
+
+## Coverage
+
+Reviewed at `b89157a3dc71a933043e42a96b7af890bdf17827`.
+
+| Model | Source |
+| --- | --- |
+| File, ICE, peer and channel preparation | `src/seeder-service.ts`, `startUpload` before construction of `UploaderSession` |
+| Seeding write starts and commits independently of cleanup | `startUpload`, assignment of the seeding manifest and the following `await this.store.write(manifest)`, plus `src/upload-store.ts`, `UploadStore.write` |
+| Peer error, startup failure, cancellation, or stop starts cleanup | `startUpload`, the peer error callback, startup catch, and returned `stop` |
+| One renewal at a time and rejection triggers cleanup | `startUpload`, renewal interval and the `renewing` and lifetime guards |
+| Cleanup closes the peer, awaits bounded cleanup and writes the terminal manifest | `startUpload`, the shared `stopPromise` and the body of `cleanup` |
+
+TLC explores one upload on the channel path with a renewal secret. One startup write and one terminal write can be in flight. A successful same-directory rename is the point at which a manifest becomes visible. A failure to open a resource, interruption before the seeding write, and a remote cleanup warning are represented by outcomes. The model assumes a working manifest filesystem and a peer whose `destroy` completes normally. It does not model WebRTC, renewal deadlines, the worker's polling loop, or asynchronous file and channel acquisition after abort.
+
+## Known finding
+
+`TerminalRecordStaysTerminal` fails on the reviewed commit. A peer fails while the seeding manifest is waiting to be written. Cleanup destroys the peer and records the failure. The original write then records seeding again. pstack's `/statechart` explored 44 states, found the eight-step path, and checked `NoDeadlock`.
+
+To replay in a disposable checkout with dependencies installed, copy [the local fixture](references/seeder-trace.test.ts) to `tests/formal-seeder-trace.test.ts` and run `npm test -- tests/formal-seeder-trace.test.ts tests/seeder-lifecycle.test.ts`. The fixture delays the first manifest write and uses the real `UploadStore` and a fake peer. It observed the terminal record first and the stale record second. Its assertions describe the behavior on the reviewed commit.
+
+## Verify a change
+
+1. Compare the covered methods with the reviewed commit, paying particular attention to where each manifest is captured and which asynchronous write can finish last.
+2. Run the checker and interpret the result with pstack's `/statechart`. Replay each changed counterexample using the local fixture. If the bug was deliberately fixed, assert that the terminal status survives releasing the old write.
+3. Advance the reviewed commit only after checking the model against the implementation.
