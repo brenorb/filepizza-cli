@@ -1,0 +1,28 @@
+---
+title: "FilePizza share, status, and stop"
+---
+stateDiagram-v2
+  s0: Checking the local file
+  s1: Waiting for a link
+  s2: Share failed
+  s3: Stopping the share
+  s4: Share command timed out
+  s5: Share stopped
+  s6: Link available
+  [*] --> s0
+  s0 --> s1: the file is accepted
+  s0 --> s2: the file is rejected
+  s1 --> s3: the sender interrupts the command or the sender requests a stop
+  s1 --> s4: the share deadline passes
+  s1 --> s2: the background worker exits or the share fails
+  s3 --> s2: the background worker exits or the share fails
+  s4 --> s2: the background worker exits or the share fails
+  s1 --> s5: the background worker exits
+  s1 --> s6: the command prints the link or the share deadline passes [status can show the link]
+  s3 --> s5: the background worker exits or the background worker stops
+  s4 --> s5: the background worker exits
+  s4 --> s6: the link becomes available
+  s6 --> s5: the background worker exits
+  s6 --> s2: the share fails
+  s4 --> s3: the sender requests a stop
+  s6 --> s3: the sender requests a stop
