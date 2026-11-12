@@ -1,0 +1,31 @@
+---
+title: "FilePizza download, pause, and resume"
+---
+stateDiagram-v2
+  s0: Recipient opens the download
+  s1: Connection closed
+  s2: Download failed
+  s3: Reading the next piece
+  s4: Download paused
+  s5: Final piece received
+  s6: Piece received
+  [*] --> s0
+  s0 --> s1: the connection closes
+  s0 --> s2: the transfer fails
+  s0 --> s3: recipient starts downloading
+  s3 --> s1: the connection closes
+  s3 --> s2: the transfer fails
+  s3 --> s4: recipient pauses
+  s3 --> s6: the piece arrives
+  s3 --> s5: the piece arrives
+  s4 --> s1: the connection closes
+  s4 --> s2: the transfer fails
+  s4 --> s3: recipient resumes
+  s5 --> s1: the connection closes
+  s5 --> s2: the transfer fails
+  s5 --> s4: recipient pauses
+  s5 --> s3: recipient starts again
+  s6 --> s1: the connection closes
+  s6 --> s2: the transfer fails
+  s6 --> s4: recipient pauses
+  s6 --> s3: next piece is due or recipient restarts
